@@ -1,13 +1,17 @@
 {
   "name": "siteclaw",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Track Lighthouse performance scores for your client sites over time",
   "type": "module",
   "bin": {
     "siteclaw": "./dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "pnpm run build",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
     "lint": "biome check .",
