@@ -14,6 +14,29 @@ const config = loadConfig();
 const program = new Command();
 program.name("siteclaw").description("Track Lighthouse performance history across client sites");
 
+// Commander only prints command usage by default; this adds the setup steps a first-time
+// user actually needs (sites.json, siteclaw.config.json) so `siteclaw --help` alone is enough
+// to get started, without requiring a trip to the README.
+program.addHelpText(
+  "after",
+  `
+Setup:
+  1. Create sites.json in the current directory, an array of sites to track:
+       [{ "name": "client-a", "url": "https://client-a-domain.com" }]
+  2. (Optional) Create siteclaw.config.json to override defaults (dbPath, sitesPath,
+     opportunityAudits). If missing, built-in defaults are used.
+
+Typical workflow:
+  $ siteclaw check client-a --note "deployed plugin update"
+  $ siteclaw list
+  $ siteclaw history client-a
+  $ siteclaw correlate
+
+Results are stored in a local SQLite database (siteclaw.db by default) and accumulate
+over time; nothing is sent anywhere, and no site is written to.
+`,
+);
+
 // Compares the two most recent runs only, not the full history, so a single new `check`
 // tells you whether the last change helped or hurt.
 function trendArrow(runs: Run[]): string {
