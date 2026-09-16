@@ -180,7 +180,7 @@ Once installed globally (`npm install -g siteclaw`), add a `SKILL.md` to your wo
 ---
 name: siteclaw
 description: Lighthouse performance history tracker for a portfolio of client sites
-version: 0.1.3
+version: 0.2.0
 requires_binaries:
   - siteclaw
 ---

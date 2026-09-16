@@ -16,7 +16,7 @@ const program = new Command();
 program
   .name("siteclaw")
   .description("Track Lighthouse performance history across client sites")
-  .version("0.1.3")
+  .version("0.2.0")
   .option("--json", "Output as JSON");
 
 // Commander only prints command usage by default; this adds the setup steps a first-time
