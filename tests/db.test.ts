@@ -8,6 +8,7 @@ const TEST_DB_PATH = "test-siteclaw.db";
 function makeResult(score: number): LighthouseResult {
   return {
     performanceScore: score,
+    device: "mobile",
     coreMetrics: { fcp: 1000, lcp: 1500, speedIndex: 2000, tti: 2500, tbt: 100, cls: 0.05 },
     renderBlockingResources: [{ url: "https://example.com/blocking.js", wastedMs: 100 }],
     opportunities: [],
@@ -16,6 +17,10 @@ function makeResult(score: number): LighthouseResult {
       totalRequests: 42,
       totalTransferBytes: 512_000,
       thirdParty: [{ entity: "Google Analytics", blockingMs: 50, transferBytes: 20_000 }],
+      serverResponseTimeMs: 250,
+      legacyJavascriptWastedBytes: 0,
+      duplicatedJavascriptWastedBytes: 0,
+      legacyHttpRequestCount: 0,
     },
     security: { onHttps: true, hasHsts: false, hasCspAgainstXss: false, deprecatedApiUsages: [] },
   };
@@ -87,7 +92,17 @@ describe("db", () => {
     ).run("legacy-site", "https://legacy-site.com", new Date().toISOString(), 60, "[]", "[]");
 
     const [run] = getHistoryForSite(db, "legacy-site");
-    expect(run.diagnostics).toEqual({ domElementCount: 0, totalRequests: 0, totalTransferBytes: 0, thirdParty: [] });
+    expect(run.diagnostics).toEqual({
+      domElementCount: 0,
+      totalRequests: 0,
+      totalTransferBytes: 0,
+      thirdParty: [],
+      serverResponseTimeMs: 0,
+      legacyJavascriptWastedBytes: 0,
+      duplicatedJavascriptWastedBytes: 0,
+      legacyHttpRequestCount: 0,
+    });
+    expect(run.device).toBe("mobile");
     expect(run.security.onHttps).toBe(true);
   });
 });

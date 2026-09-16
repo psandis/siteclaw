@@ -1,6 +1,6 @@
 {
   "name": "siteclaw",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Track Lighthouse performance scores for your client sites over time",
   "license": "MIT",
   "type": "module",

@@ -40,6 +40,16 @@ export interface Diagnostics {
   totalRequests: number;
   totalTransferBytes: number;
   thirdParty: ThirdPartyImpact[];
+  // Server response time (TTFB), in ms — from Lighthouse's server-response-time audit.
+  // Distinguishes "the page is slow because the server took long to respond" from
+  // "the page is slow because of client-side script/render work" (FCP/LCP alone can't).
+  serverResponseTimeMs: number;
+  // Wasted bytes from shipping unnecessary legacy JS transforms/polyfills for old browsers.
+  legacyJavascriptWastedBytes: number;
+  // Wasted bytes from the same JS module being bundled/downloaded more than once.
+  duplicatedJavascriptWastedBytes: number;
+  // Count of requests still made over HTTP/1.1 instead of HTTP/2 or HTTP/3.
+  legacyHttpRequestCount: number;
 }
 
 // From Lighthouse's best-practices category (is-on-https, has-hsts, csp-xss, deprecations).
@@ -51,8 +61,13 @@ export interface SecurityFindings {
   deprecatedApiUsages: string[];
 }
 
+// Lighthouse ships exactly two device presets — mobile (throttled 4G, MotoG4 emulation,
+// the default) and desktop (untethered, 1350x940). There is no built-in "tablet" preset.
+export type Device = "mobile" | "desktop";
+
 export interface LighthouseResult {
   performanceScore: number;
+  device: Device;
   coreMetrics: CoreMetrics;
   renderBlockingResources: RenderBlockingResource[];
   opportunities: Opportunity[];
@@ -66,6 +81,7 @@ export interface Run {
   url: string;
   timestamp: string;
   performanceScore: number;
+  device: Device;
   coreMetrics: CoreMetrics;
   renderBlockingResources: RenderBlockingResource[];
   opportunities: Opportunity[];

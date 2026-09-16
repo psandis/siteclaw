@@ -7,6 +7,10 @@ const EMPTY_DIAGNOSTICS: Diagnostics = {
   totalRequests: 0,
   totalTransferBytes: 0,
   thirdParty: [],
+  serverResponseTimeMs: 0,
+  legacyJavascriptWastedBytes: 0,
+  duplicatedJavascriptWastedBytes: 0,
+  legacyHttpRequestCount: 0,
 };
 const EMPTY_SECURITY: SecurityFindings = {
   onHttps: true,
@@ -38,6 +42,7 @@ export function openDb(path = "siteclaw.db") {
       url TEXT NOT NULL,
       timestamp TEXT NOT NULL,
       performance_score REAL NOT NULL,
+      device TEXT,
       core_metrics TEXT,
       render_blocking_resources TEXT NOT NULL,
       opportunities TEXT NOT NULL,
@@ -47,6 +52,7 @@ export function openDb(path = "siteclaw.db") {
     );
     CREATE INDEX IF NOT EXISTS idx_runs_site_name ON runs (site_name);
   `);
+  ensureColumn(db, "runs", "device", "TEXT");
   ensureColumn(db, "runs", "core_metrics", "TEXT");
   ensureColumn(db, "runs", "diagnostics", "TEXT");
   ensureColumn(db, "runs", "security", "TEXT");
@@ -64,13 +70,14 @@ export function insertRun(
   note: string | null,
 ): void {
   db.prepare(
-    `INSERT INTO runs (site_name, url, timestamp, performance_score, core_metrics, render_blocking_resources, opportunities, diagnostics, security, note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO runs (site_name, url, timestamp, performance_score, device, core_metrics, render_blocking_resources, opportunities, diagnostics, security, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     siteName,
     url,
     new Date().toISOString(),
     result.performanceScore,
+    result.device,
     JSON.stringify(result.coreMetrics),
     JSON.stringify(result.renderBlockingResources),
     JSON.stringify(result.opportunities),
@@ -82,8 +89,9 @@ export function insertRun(
 
 // better-sqlite3 returns plain rows with snake_case columns and JSON-as-text fields;
 // this maps a row back to the typed, camelCase Run shape used everywhere else in the app.
-// core_metrics/diagnostics/security can be null for rows written before those columns existed;
-// those fall back to empty/neutral defaults rather than crashing on JSON.parse(null).
+// device/core_metrics/diagnostics/security can be null for rows written before those columns
+// existed; those fall back to empty/neutral defaults (device to "mobile", Lighthouse's own
+// default at the time) rather than crashing on JSON.parse(null).
 function rowToRun(row: any): Run {
   return {
     id: row.id,
@@ -91,6 +99,7 @@ function rowToRun(row: any): Run {
     url: row.url,
     timestamp: row.timestamp,
     performanceScore: row.performance_score,
+    device: row.device ?? "mobile",
     coreMetrics: row.core_metrics ? JSON.parse(row.core_metrics) : EMPTY_CORE_METRICS,
     renderBlockingResources: JSON.parse(row.render_blocking_resources),
     opportunities: JSON.parse(row.opportunities),

@@ -6,7 +6,7 @@ import { getHistoryForSite, getLatestRunPerSite, insertRun, openDb } from "./db.
 import { runLighthouse } from "./lighthouse-runner.js";
 import { rate } from "./ratings.js";
 import { loadSites, resolveSiteOrUrl } from "./sites.js";
-import type { CoreMetrics, Diagnostics, Run, SecurityFindings } from "./types.js";
+import type { CoreMetrics, Device, Diagnostics, Run, SecurityFindings } from "./types.js";
 
 // Config is loaded once at startup; every command below reads paths/audit list from it
 // instead of hardcoding "siteclaw.db"/"sites.json" directly.
@@ -16,7 +16,7 @@ const program = new Command();
 program
   .name("siteclaw")
   .description("Track Lighthouse performance history across client sites")
-  .version("0.2.0")
+  .version("0.2.1")
   .option("--json", "Output as JSON");
 
 // Commander only prints command usage by default; this adds the setup steps a first-time
@@ -85,8 +85,18 @@ function formatBytes(bytes: number): string {
 
 function printDiagnostics(diagnostics: Diagnostics): void {
   console.log("\nDiagnostics:");
+  console.log(`  Server response time (TTFB): ${Math.round(diagnostics.serverResponseTimeMs)}ms`);
   console.log(`  DOM elements: ${diagnostics.domElementCount}`);
   console.log(`  Network requests: ${diagnostics.totalRequests} (${formatBytes(diagnostics.totalTransferBytes)} transferred)`);
+  if (diagnostics.legacyHttpRequestCount > 0) {
+    console.log(`  Requests still on HTTP/1.1 (not HTTP/2+): ${diagnostics.legacyHttpRequestCount}`);
+  }
+  if (diagnostics.legacyJavascriptWastedBytes > 0) {
+    console.log(`  Unnecessary legacy JS (old-browser polyfills/transforms): ${formatBytes(diagnostics.legacyJavascriptWastedBytes)}`);
+  }
+  if (diagnostics.duplicatedJavascriptWastedBytes > 0) {
+    console.log(`  Duplicated JavaScript modules: ${formatBytes(diagnostics.duplicatedJavascriptWastedBytes)}`);
+  }
   if (diagnostics.thirdParty.length > 0) {
     console.log("  Third-party impact (main-thread time):");
     for (const tp of diagnostics.thirdParty) {
@@ -128,48 +138,69 @@ function printComparisonToPrevious(history: Run[]): void {
   console.log(`\nVs. previous check (${previous.timestamp}): score ${direction} ${Math.abs(scoreDiff)}${lcpPart}`);
 }
 
+async function runAndReportOneDevice(
+  site: { name: string; url: string },
+  device: Device,
+  note: string | null,
+  isJson: boolean,
+): Promise<any> {
+  if (!isJson) console.log(`Running Lighthouse (${device}) against ${site.url}...`);
+  const result = await runLighthouse(site.url, config.opportunityAudits, device);
+  const db = openDb(config.dbPath);
+  insertRun(db, site.name, site.url, result, note);
+  const history = getHistoryForSite(db, site.name).filter((r) => r.device === device);
+  db.close();
+
+  if (isJson) {
+    return { site: site.name, url: site.url, note, ...result };
+  }
+
+  console.log(`\n${site.name} [${device}]: performance score ${result.performanceScore}`);
+  printCoreMetrics(result.coreMetrics);
+  if (result.renderBlockingResources.length > 0) {
+    console.log("\nRender-blocking resources:");
+    for (const r of result.renderBlockingResources) {
+      console.log(`  ${r.url} (${r.wastedMs}ms)`);
+    }
+  }
+  if (result.opportunities.length > 0) {
+    console.log("\nOpportunities:");
+    for (const o of result.opportunities) {
+      console.log(`  ${o.title}: ${o.description}${o.wastedMs ? ` (${o.wastedMs}ms potential savings)` : ""}`);
+    }
+  }
+  printDiagnostics(result.diagnostics);
+  printSecurity(result.security);
+  printComparisonToPrevious(history);
+  return null;
+}
+
 program
   .command("check <siteOrUrl>")
   .description(
     "Run Lighthouse against a site (by name from sites.json, a bare domain, or a full http(s) URL) and store the result",
   )
   .option("--note <text>", "attach a note to this run (e.g. a deploy or change made)")
-  .action(async (siteOrUrl: string, opts: { note?: string }) => {
+  .option("--device <device>", "mobile, desktop, or both", "mobile")
+  .action(async (siteOrUrl: string, opts: { note?: string; device: string }) => {
+    if (!["mobile", "desktop", "both"].includes(opts.device)) {
+      throw new Error(`--device must be "mobile", "desktop", or "both" (got "${opts.device}")`);
+    }
     // Resolves a configured site name first, then falls back to treating the input as a
     // one-off URL/domain (no sites.json entry required) — see resolveSiteOrUrl for the
     // exact matching rules.
     const site = resolveSiteOrUrl(siteOrUrl, config.sitesPath);
-
     const isJson = program.opts().json;
-    if (!isJson) console.log(`Running Lighthouse against ${site.url}...`);
-    const result = await runLighthouse(site.url, config.opportunityAudits);
-    const db = openDb(config.dbPath);
-    insertRun(db, site.name, site.url, result, opts.note ?? null);
-    const history = getHistoryForSite(db, site.name);
-    db.close();
+    const devices: Device[] = opts.device === "both" ? ["mobile", "desktop"] : [opts.device as Device];
 
+    const jsonResults = [];
+    for (const device of devices) {
+      const jsonResult = await runAndReportOneDevice(site, device, opts.note ?? null, isJson);
+      if (jsonResult) jsonResults.push(jsonResult);
+    }
     if (isJson) {
-      console.log(JSON.stringify({ site: site.name, url: site.url, note: opts.note ?? null, ...result }, null, 2));
-      return;
+      console.log(JSON.stringify(devices.length > 1 ? jsonResults : jsonResults[0], null, 2));
     }
-
-    console.log(`\n${site.name}: performance score ${result.performanceScore}`);
-    printCoreMetrics(result.coreMetrics);
-    if (result.renderBlockingResources.length > 0) {
-      console.log("\nRender-blocking resources:");
-      for (const r of result.renderBlockingResources) {
-        console.log(`  ${r.url} (${r.wastedMs}ms)`);
-      }
-    }
-    if (result.opportunities.length > 0) {
-      console.log("\nOpportunities:");
-      for (const o of result.opportunities) {
-        console.log(`  ${o.title}: ${o.description}${o.wastedMs ? ` (${o.wastedMs}ms potential savings)` : ""}`);
-      }
-    }
-    printDiagnostics(result.diagnostics);
-    printSecurity(result.security);
-    printComparisonToPrevious(history);
   });
 
 program

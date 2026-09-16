@@ -6,9 +6,12 @@ Lighthouse-backed performance history tracker for a portfolio of client sites. S
 
 ## What It Does
 
-- runs Lighthouse against any site (by name from `sites.json`, or a raw URL for a one-off check) and stores the result
-- tracks performance score history per site, with a trend indicator against the previous run
-- surfaces Lighthouse's own fix guidance: render-blocking resources, unused CSS/JS, oversized payloads
+- runs Lighthouse against any site (by name from `sites.json`, a bare domain, or a full URL) and stores the result
+- reports all six Core Web Vitals (FCP, LCP, Speed Index, TTI, TBT, CLS), rated against Google's published thresholds — not just the aggregate score
+- diagnostics: server response time (TTFB), DOM size, network request/byte totals, named third-party origin impact, legacy/duplicated JavaScript, HTTP/1.1 usage
+- security checks: HTTPS, HSTS, CSP against XSS
+- `--device mobile|desktop|both` — run either or both of Lighthouse's real device presets
+- tracks performance score history per site, with a trend indicator and a comparison against the previous run
 - correlates shared render-blocking resources across sites (e.g. the same theme/plugin asset slowing down several client sites at once)
 - attaches an optional note to a run (e.g. "deployed plugin update") to trace a regression back to a change
 - `--json` flag on all commands for agents and scripts
@@ -55,47 +58,51 @@ siteclaw correlate
 ```
 siteclaw check techcrunch
 
-Running Lighthouse against https://techcrunch.com...
+Running Lighthouse (mobile) against https://techcrunch.com...
 
-techcrunch: performance score 46
+techcrunch [mobile]: performance score 36
 
 Core metrics:
-  First Contentful Paint: 2280ms (needs improvement)
-  Largest Contentful Paint: 4249ms (poor)
-  Speed Index: 10955ms (poor)
-  Time to Interactive: 33394ms (poor)
-  Total Blocking Time: 1824ms (poor)
-  Cumulative Layout Shift: 0.064 (good)
+  First Contentful Paint: 14866ms (poor)
+  Largest Contentful Paint: 28031ms (poor)
+  Speed Index: 14866ms (poor)
+  Time to Interactive: 29791ms (poor)
+  Total Blocking Time: 813ms (poor)
+  Cumulative Layout Shift: 0.000 (good)
 
 Opportunities:
-  Reduce unused CSS: Reduce unused rules from stylesheets and defer CSS not used for above-the-fold content to decrease bytes consumed by network activity. [Learn how to reduce unused CSS](https://developer.chrome.com/docs/lighthouse/performance/unused-css-rules/). (160ms potential savings)
-  Reduce unused JavaScript: Reduce unused JavaScript and defer loading scripts until they are required to decrease bytes consumed by network activity. [Learn how to reduce unused JavaScript](https://developer.chrome.com/docs/lighthouse/performance/unused-javascript/). (160ms potential savings)
+  Reduce unused CSS: Reduce unused rules from stylesheets and defer CSS not used for above-the-fold content to decrease bytes consumed by network activity. [Learn how to reduce unused CSS](https://developer.chrome.com/docs/lighthouse/performance/unused-css-rules/).
+  Reduce unused JavaScript: Reduce unused JavaScript and defer loading scripts until they are required to decrease bytes consumed by network activity. [Learn how to reduce unused JavaScript](https://developer.chrome.com/docs/lighthouse/performance/unused-javascript/). (3740ms potential savings)
   Avoid enormous network payloads: Large network payloads cost users real money and are highly correlated with long load times. [Learn how to reduce payload sizes](https://developer.chrome.com/docs/lighthouse/performance/total-byte-weight/).
 
 Diagnostics:
-  DOM elements: 7146
-  Network requests: 246 (4.0MB transferred)
+  Server response time (TTFB): 18ms
+  DOM elements: 7118
+  Network requests: 186 (3.9MB transferred)
+  Unnecessary legacy JS (old-browser polyfills/transforms): 25.1KB
   Third-party impact (main-thread time):
-    Google Tag Manager: 188ms, 521.5KB
-    servenobid.com: 124ms, 438.2KB
-    Google CDN: 104ms, 346.1KB
-    Facebook: 95ms, 189.9KB
-    Google/Doubleclick Ads: 67ms, 269.9KB
+    Google Tag Manager: 145ms, 521.5KB
+    servenobid.com: 110ms, 438.2KB
+    Google CDN: 83ms, 347.4KB
+    Facebook: 79ms, 189.9KB
+    Google/Doubleclick Ads: 54ms, 270.4KB
 
 Security:
   HTTPS: yes
   HSTS header: present
   CSP against XSS: configured
 
-Vs. previous check (2026-09-16T22:09:31.502Z): score up 12, LCP -25629ms
+Vs. previous check (2026-09-16T22:12:13.034Z): score down 10, LCP +23782ms
 ```
 
 Notes:
 
 - accepts either a name from `sites.json`, a bare domain (`www.example.com`), or a full `http(s)://` URL — no `sites.json` entry required for the latter two
 - `--note <text>` attaches a note to the run, useful for tracing a later regression back to a specific change
+- `--device mobile|desktop|both` — defaults to `mobile` (Lighthouse's own default, and how most real-world traffic arrives); `both` runs and reports each device separately, each compared against its own device-specific history
 - Core metric ratings (good / needs improvement / poor) use Google's own published Core Web Vitals / Lighthouse thresholds
-- Third-party impact and security checks (HTTPS, HSTS, CSP) come from Lighthouse's `best-practices` category, run alongside `performance`
+- server response time (TTFB), legacy/duplicated JavaScript, and HTTP/1.1 usage only print when non-zero, so a clean result doesn't clutter the output
+- third-party impact and security checks (HTTPS, HSTS, CSP) come from Lighthouse's `best-practices` category, run alongside `performance`
 - the "vs. previous check" line is skipped for the metric comparison (score still shown) if the previous run predates core-metrics tracking, rather than showing a misleading diff against missing data
 
 ### List all sites
@@ -180,7 +187,7 @@ Once installed globally (`npm install -g siteclaw`), add a `SKILL.md` to your wo
 ---
 name: siteclaw
 description: Lighthouse performance history tracker for a portfolio of client sites
-version: 0.2.0
+version: 0.2.1
 requires_binaries:
   - siteclaw
 ---

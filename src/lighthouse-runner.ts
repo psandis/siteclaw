@@ -1,7 +1,11 @@
 import * as chromeLauncher from "chrome-launcher";
 import lighthouse from "lighthouse";
+// Lighthouse's own shipped desktop preset (formFactor, throttling, screen emulation, UA) —
+// not reconstructed here, since that would risk drifting from Lighthouse's real defaults.
+import desktopConfig from "lighthouse/core/config/desktop-config.js";
 import type {
   CoreMetrics,
+  Device,
   Diagnostics,
   LighthouseResult,
   Opportunity,
@@ -9,6 +13,10 @@ import type {
   SecurityFindings,
   ThirdPartyImpact,
 } from "./types.js";
+
+function sumWastedBytes(items: any[]): number {
+  return items.reduce((sum, item) => sum + (item.wastedBytes ?? 0), 0);
+}
 
 // Lighthouse audits a page by driving a real (headless) Chrome instance, so it needs its own
 // browser to launch and control on a local debugging port. This is black-box only: no server
@@ -20,14 +28,18 @@ import type {
 // best-practices is included alongside performance (not performance alone) specifically to get
 // real security-relevant audits (is-on-https, has-hsts, csp-xss, deprecations) computed at all —
 // they don't run if only the performance category is requested.
-export async function runLighthouse(url: string, opportunityAudits: string[]): Promise<LighthouseResult> {
+export async function runLighthouse(
+  url: string,
+  opportunityAudits: string[],
+  device: Device = "mobile",
+): Promise<LighthouseResult> {
   const chrome = await chromeLauncher.launch({ chromeFlags: ["--headless"] });
   try {
-    const runnerResult = await lighthouse(url, {
-      port: chrome.port,
-      output: "json",
-      onlyCategories: ["performance", "best-practices"],
-    });
+    const runnerResult = await lighthouse(
+      url,
+      { port: chrome.port, output: "json", onlyCategories: ["performance", "best-practices"] },
+      device === "desktop" ? (desktopConfig as any) : undefined,
+    );
 
     if (!runnerResult) {
       throw new Error(`Lighthouse produced no result for ${url}`);
@@ -87,11 +99,22 @@ export async function runLighthouse(url: string, opportunityAudits: string[]): P
       }))
       .slice(0, 5);
 
+    // legacy-javascript-insight/duplicated-javascript-insight report per-file wasted bytes with
+    // no pre-summed total, so it's summed here. modern-http-insight lists requests still on
+    // HTTP/1.1 instead of HTTP/2+, one row per request — the count itself is the finding.
+    const legacyJsItems: any[] = (lhr.audits["legacy-javascript-insight"]?.details as any)?.items ?? [];
+    const duplicatedJsItems: any[] = (lhr.audits["duplicated-javascript-insight"]?.details as any)?.items ?? [];
+    const legacyHttpItems: any[] = (lhr.audits["modern-http-insight"]?.details as any)?.items ?? [];
+
     const diagnostics: Diagnostics = {
       domElementCount: lhr.audits["dom-size-insight"]?.numericValue ?? 0,
       totalRequests,
       totalTransferBytes,
       thirdParty,
+      serverResponseTimeMs: lhr.audits["server-response-time"]?.numericValue ?? 0,
+      legacyJavascriptWastedBytes: sumWastedBytes(legacyJsItems),
+      duplicatedJavascriptWastedBytes: sumWastedBytes(duplicatedJsItems),
+      legacyHttpRequestCount: legacyHttpItems.length,
     };
 
     // best-practices audits: score === 1 is a pass, 0 is a fail, null means not applicable
@@ -108,7 +131,7 @@ export async function runLighthouse(url: string, opportunityAudits: string[]): P
       deprecatedApiUsages,
     };
 
-    return { performanceScore, coreMetrics, renderBlockingResources, opportunities, diagnostics, security };
+    return { performanceScore, device, coreMetrics, renderBlockingResources, opportunities, diagnostics, security };
   } finally {
     // Always kill the launched Chrome instance, even if Lighthouse throws, to avoid leaking
     // headless Chrome processes on every failed run.
