@@ -135,4 +135,11 @@ program
     }
   });
 
+// Commander exits with code 1 by default when no subcommand is given, which makes a bare
+// `siteclaw`/`pnpm dev` look like a failure to npm/pnpm even though showing help isn't an error.
+if (process.argv.length <= 2) {
+  program.outputHelp();
+  process.exit(0);
+}
+
 program.parse();
