@@ -60,39 +60,41 @@ siteclaw check techcrunch
 
 Running Lighthouse (mobile) against https://techcrunch.com...
 
-techcrunch [mobile]: performance score 36
+techcrunch [mobile]: performance score 61
+
+Diagnosis: Largest Contentful Paint is 4436ms (poor) with a fast server (TTFB 17ms) — the delay is happening client-side after the server has already responded. Check for a slow-loading render-blocking resource, redirect, or content waiting on a client-side request. Published research on web performance generally (not a claim about this specific site): a 100ms delay has been linked to roughly a 7% drop in conversions, a 1-second delay on e-commerce pages to up to a 20% drop, and sites taking over 3 seconds to load see roughly 53% of mobile visitors abandon before it finishes (Google/Akamai-SOASTA; Deloitte/Google 2020).
 
 Core metrics:
-  First Contentful Paint: 14866ms (poor)
-  Largest Contentful Paint: 28031ms (poor)
-  Speed Index: 14866ms (poor)
-  Time to Interactive: 29791ms (poor)
-  Total Blocking Time: 813ms (poor)
-  Cumulative Layout Shift: 0.000 (good)
+  First Contentful Paint: 2251ms (needs improvement)
+  Largest Contentful Paint: 4436ms (poor)
+  Speed Index: 10337ms (poor)
+  Time to Interactive: 31373ms (poor)
+  Total Blocking Time: 439ms (needs improvement)
+  Cumulative Layout Shift: 0.064 (good)
 
 Opportunities:
-  Reduce unused CSS: Reduce unused rules from stylesheets and defer CSS not used for above-the-fold content to decrease bytes consumed by network activity. [Learn how to reduce unused CSS](https://developer.chrome.com/docs/lighthouse/performance/unused-css-rules/).
-  Reduce unused JavaScript: Reduce unused JavaScript and defer loading scripts until they are required to decrease bytes consumed by network activity. [Learn how to reduce unused JavaScript](https://developer.chrome.com/docs/lighthouse/performance/unused-javascript/). (3740ms potential savings)
+  Reduce unused CSS: Reduce unused rules from stylesheets and defer CSS not used for above-the-fold content to decrease bytes consumed by network activity. [Learn how to reduce unused CSS](https://developer.chrome.com/docs/lighthouse/performance/unused-css-rules/). (160ms potential savings)
+  Reduce unused JavaScript: Reduce unused JavaScript and defer loading scripts until they are required to decrease bytes consumed by network activity. [Learn how to reduce unused JavaScript](https://developer.chrome.com/docs/lighthouse/performance/unused-javascript/).
   Avoid enormous network payloads: Large network payloads cost users real money and are highly correlated with long load times. [Learn how to reduce payload sizes](https://developer.chrome.com/docs/lighthouse/performance/total-byte-weight/).
 
 Diagnostics:
-  Server response time (TTFB): 18ms
+  Server response time (TTFB): 17ms
   DOM elements: 7118
-  Network requests: 186 (3.9MB transferred)
+  Network requests: 212 (3.9MB transferred)
   Unnecessary legacy JS (old-browser polyfills/transforms): 25.1KB
   Third-party impact (main-thread time):
-    Google Tag Manager: 145ms, 521.5KB
-    servenobid.com: 110ms, 438.2KB
-    Google CDN: 83ms, 347.4KB
-    Facebook: 79ms, 189.9KB
-    Google/Doubleclick Ads: 54ms, 270.4KB
+    Google Tag Manager: 102ms, 521.5KB
+    Google CDN: 60ms, 347.4KB
+    Facebook: 52ms, 189.9KB
+    servenobid.com: 40ms, 438.2KB
+    Clarity: 39ms, 26.9KB
 
 Security:
   HTTPS: yes
   HSTS header: present
   CSP against XSS: configured
 
-Vs. previous check (2026-09-16T22:12:13.034Z): score down 10, LCP +23782ms
+Vs. previous check (2026-09-16T22:36:52.911Z): score up 2, LCP -20ms
 ```
 
 Notes:
@@ -100,7 +102,8 @@ Notes:
 - accepts either a name from `sites.json`, a bare domain (`www.example.com`), or a full `http(s)://` URL — no `sites.json` entry required for the latter two
 - `--note <text>` attaches a note to the run, useful for tracing a later regression back to a specific change
 - `--device mobile|desktop|both` — defaults to `mobile` (Lighthouse's own default, and how most real-world traffic arrives); `both` runs and reports each device separately, each compared against its own device-specific history
-- Core metric ratings (good / needs improvement / poor) use Google's own published Core Web Vitals / Lighthouse thresholds
+- **Diagnosis** synthesizes the metrics into one root-cause line instead of leaving you to interpret a list of numbers: it checks server response time (TTFB) first — since a slow server delays everything downstream and no front-end fix can compensate for it — then main-thread blocking from third-party scripts (weighted 30% in Lighthouse's own score), then a client-side LCP delay when the server itself is fast. The general research context (conversion/bounce-rate impact of load-time delay) is cited from Google/Akamai-SOASTA and the Deloitte/Google 2020 mobile speed study — general industry findings, not a prediction for your specific site — and only appears when something is genuinely poor.
+- Core metric ratings (good / needs improvement / poor) use Google's own published Core Web Vitals / Lighthouse thresholds, including TTFB (good ≤800ms, poor >1800ms, per web.dev)
 - server response time (TTFB), legacy/duplicated JavaScript, and HTTP/1.1 usage only print when non-zero, so a clean result doesn't clutter the output
 - third-party impact and security checks (HTTPS, HSTS, CSP) come from Lighthouse's `best-practices` category, run alongside `performance`
 - the "vs. previous check" line is skipped for the metric comparison (score still shown) if the previous run predates core-metrics tracking, rather than showing a misleading diff against missing data
@@ -187,7 +190,7 @@ Once installed globally (`npm install -g siteclaw`), add a `SKILL.md` to your wo
 ---
 name: siteclaw
 description: Lighthouse performance history tracker for a portfolio of client sites
-version: 0.2.1
+version: 0.2.2
 requires_binaries:
   - siteclaw
 ---

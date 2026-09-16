@@ -5,6 +5,7 @@ import { findSharedRenderBlockingResources } from "./correlate.js";
 import { getHistoryForSite, getLatestRunPerSite, insertRun, openDb } from "./db.js";
 import { runLighthouse } from "./lighthouse-runner.js";
 import { rate } from "./ratings.js";
+import { buildDiagnosis } from "./diagnosis.js";
 import { loadSites, resolveSiteOrUrl } from "./sites.js";
 import type { CoreMetrics, Device, Diagnostics, Run, SecurityFindings } from "./types.js";
 
@@ -16,7 +17,7 @@ const program = new Command();
 program
   .name("siteclaw")
   .description("Track Lighthouse performance history across client sites")
-  .version("0.2.1")
+  .version("0.2.2")
   .option("--json", "Output as JSON");
 
 // Commander only prints command usage by default; this adds the setup steps a first-time
@@ -151,11 +152,14 @@ async function runAndReportOneDevice(
   const history = getHistoryForSite(db, site.name).filter((r) => r.device === device);
   db.close();
 
+  const diagnosis = buildDiagnosis(result);
+
   if (isJson) {
-    return { site: site.name, url: site.url, note, ...result };
+    return { site: site.name, url: site.url, note, diagnosis, ...result };
   }
 
   console.log(`\n${site.name} [${device}]: performance score ${result.performanceScore}`);
+  console.log(`\nDiagnosis: ${diagnosis}`);
   printCoreMetrics(result.coreMetrics);
   if (result.renderBlockingResources.length > 0) {
     console.log("\nRender-blocking resources:");

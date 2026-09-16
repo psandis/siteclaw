@@ -2,7 +2,13 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
-## [0.2.1] - not yet published
+## [0.2.2] 
+
+### Added
+- `check` now synthesizes a one-line `Diagnosis` instead of leaving the reader to interpret a flat list of metrics: root-cause priority is server response time (TTFB) first (a slow server delays everything downstream), then main-thread blocking from third-party scripts (30%-weighted in Lighthouse's own score) when a heavy third party is present, then a client-side LCP delay when the server itself is fast. Includes general research context on load-time impact on conversion/bounce rate (Google/Akamai-SOASTA; Deloitte/Google 2020), clearly framed as industry findings rather than a per-site prediction, shown only when something is genuinely poor.
+- TTFB is now rated good/needs improvement/poor using web.dev's published thresholds (≤800ms / ≤1800ms / above).
+
+## [0.2.1] - published to npm
 
 ### Added
 - Diagnostics: server response time (TTFB), unnecessary legacy JavaScript (old-browser polyfills/transforms), duplicated JavaScript modules, and count of requests still on HTTP/1.1 instead of HTTP/2+.
