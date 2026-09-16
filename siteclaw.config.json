@@ -1,0 +1,10 @@
+{
+  "dbPath": "siteclaw.db",
+  "sitesPath": "sites.json",
+  "opportunityAudits": [
+    "uses-optimized-images",
+    "unused-css-rules",
+    "unused-javascript",
+    "total-byte-weight"
+  ]
+}
