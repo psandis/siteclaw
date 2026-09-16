@@ -26,11 +26,12 @@ Setup:
   2. (Optional) Create siteclaw.config.json to override defaults (dbPath, sitesPath,
      opportunityAudits). If missing, built-in defaults are used.
 
-Typical workflow:
-  $ siteclaw check client-a --note "deployed plugin update"
-  $ siteclaw list
-  $ siteclaw history client-a
-  $ siteclaw correlate
+Typical workflow (run from the project directory; not published to npm yet, so use
+"pnpm dev" instead of a global "siteclaw" command):
+  $ pnpm dev check client-a --note "deployed plugin update"
+  $ pnpm dev list
+  $ pnpm dev history client-a
+  $ pnpm dev correlate
 
 Results are stored in a local SQLite database (siteclaw.db by default) and accumulate
 over time; nothing is sent anywhere, and no site is written to.

@@ -51,12 +51,16 @@ Both features operate purely on Lighthouse's own JSON output and locally stored 
 
 ## Usage
 
+Not published to npm yet (see the badge above), so there is no global `siteclaw` command to run yet. Run it via the `dev` script from inside the project directory instead:
+
 ```
-siteclaw check <site> [--note "text"]   # run Lighthouse against the site, store the result
-siteclaw list                           # latest score for every site in sites.json
-siteclaw history <site>                 # score history + trend for one site
-siteclaw correlate                      # shared render-blocking resources across sites
+pnpm dev check <site> [--note "text"]   # run Lighthouse against the site, store the result
+pnpm dev list                           # latest score for every site in sites.json
+pnpm dev history <site>                 # score history + trend for one site
+pnpm dev correlate                      # shared render-blocking resources across sites
 ```
+
+(Once published and installed globally with `npm install -g siteclaw`, these become `siteclaw check <site>`, `siteclaw list`, etc. — same commands, no `pnpm dev` prefix.)
 
 `sites.json`:
 ```json
@@ -67,7 +71,7 @@ siteclaw correlate                      # shared render-blocking resources acros
 
 Real output, from a run against a live public WordPress installation:
 ```
-$ siteclaw check techcrunch
+$ pnpm dev check techcrunch
 Running Lighthouse against https://techcrunch.com...
 
 techcrunch: performance score 37
@@ -77,7 +81,7 @@ Opportunities:
   Reduce unused JavaScript (4110ms potential savings)
   Avoid enormous network payloads
 
-$ siteclaw list
+$ pnpm dev list
 nasa            64   2026-09-16T20:46:54.909Z
 rollingstone    21   2026-09-16T20:47:12.956Z
 techcrunch      37   2026-09-16T20:46:40.141Z
