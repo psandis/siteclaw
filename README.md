@@ -1,95 +1,150 @@
-# siteclaw
+# Siteclaw
 
-[![npm version](https://img.shields.io/npm/v/siteclaw.svg)](https://www.npmjs.com/package/siteclaw)
+[![npm version](https://img.shields.io/npm/v/siteclaw.svg?style=flat-square)](https://www.npmjs.com/package/siteclaw)
 
-A CLI that tracks Lighthouse performance history across a portfolio of client sites (WordPress or custom-built — anything reachable by public URL), correlates regressions with deploy events, and flags shared root causes across sites that use the same theme, plugin, or shared asset.
+Lighthouse-backed performance history tracker for a portfolio of client sites. See which sites are slow, why, and whether several sites share the same root cause. Works standalone or as an OpenClaw skill.
 
-**Status: implemented and tested.** `check`, `list`, `history`, and `correlate` all work end-to-end against real Lighthouse runs. `list` and `correlate` only show sites currently listed in `sites.json`; older runs for sites removed from that file stay in the database but are hidden from those views. This document still records the research and scope decisions behind the design below.
+## What It Does
 
-## Problem
+- runs Lighthouse against any site (by name from `sites.json`, or a raw URL for a one-off check) and stores the result
+- tracks performance score history per site, with a trend indicator against the previous run
+- surfaces Lighthouse's own fix guidance: render-blocking resources, unused CSS/JS, oversized payloads
+- correlates shared render-blocking resources across sites (e.g. the same theme/plugin asset slowing down several client sites at once)
+- attaches an optional note to a run (e.g. "deployed plugin update") to trace a regression back to a change
+- `--json` flag on all commands for agents and scripts
 
-Google's own PageSpeed Insights (and every third-party wrapper around it) answers "how is this one page scoring right now." None of them answer the question that actually matters when you maintain several client sites — WordPress or otherwise: "did my last deploy make this specific site slower, and is it the same root cause as the last three regressions I fixed on other clients?"
+## Requirements
 
-The operator's current portfolio is primarily WordPress (Kadence/Divi 5), which is why WordPress-specific tooling (WP-CLI) was evaluated below, but nothing in this tool's design depends on a site being WordPress. Any site reachable by public URL can be added.
+- Node 22+
+- pnpm
 
-## Competitive landscape
+## Install
 
-Before scoping this tool, the following existing projects were checked to avoid duplicating work that already exists:
-
-| Tool | What it already does | Why it doesn't cover this use case |
-|---|---|---|
-| [Lighthouse CI](https://github.com/GoogleChrome/lighthouse-ci/) | Official Google tool. Server component stores results in SQLite, shows score history over time. | Requires running and maintaining a server process; treats every URL independently, no cross-site correlation. |
-| [lighthouse-batch](https://github.com/mikestead/lighthouse-batch) | Runs Lighthouse across a list of sites in one command. | Per-site reports only, no history, no correlation across sites. |
-| lighthouse-monitor | Runs Lighthouse against a URL list, retains reports, diffs two runs in a web UI. | Closest overlap to a naive "track scores over time" tool; still per-site, no cross-portfolio correlation and no deploy-event tagging. |
-| [WP-CLI profile-command](https://github.com/wp-cli/profile-command) | Profiles WordPress bootstrap/query/template stages to find slow plugins/hooks, from inside the server. | Requires SSH/WP-CLI access to the site. Deliberately excluded from this project — see Non-goals. |
-| CrUX API / HTTP Archive + BigQuery | Real-user field data and industry-wide performance benchmarks. | CrUX requires ~100+ monthly visits per URL to return data, which most small client sites won't meet; BigQuery adds a GCP billing setup for a comparison that doesn't change any remediation action. Both considered and dropped — see Non-goals. |
-
-**Conclusion:** raw score tracking over time is already solved by existing tools. The actual gap is correlation: across a *specific, known portfolio* of sites the operator maintains, and across *their own deploy history*, neither of which any general-purpose tool can do because neither requires knowing you own multiple related sites.
-
-## What this tool does differently
-
-1. **Cross-site pattern correlation.** If several client sites share a theme or plugin (e.g. Kadence, Divi 5) and Lighthouse flags the same blocking script or oversized asset on more than one of them, siteclaw surfaces that as a single finding ("this affects 3 of your 5 sites") instead of three unrelated per-site reports. This requires knowing the sites belong to one operator's portfolio, which general Lighthouse tooling has no concept of.
-2. **Deploy-event tagging.** `siteclaw check <site> --note "updated WooCommerce to 9.2"` attaches a note to that run. If the next run regresses, siteclaw flags it against the most recent note, so a score drop can be traced to the change that likely caused it, rather than only showing a bare timestamp.
-
-Both features operate purely on Lighthouse's own JSON output and locally stored history. Neither requires new measurement technology.
-
-## Non-goals (and why)
-
-- **No server/plugin-level profiling (WP-CLI, Query Monitor).** Would require SSH or Application Password credentials to each client's production site. Explicitly rejected: the operator does not consider it acceptable to hand a CLI tool that kind of access, even to sites they administer themselves.
-- **No automated fixing of flagged issues.** Lighthouse's own audit output already includes fix guidance per issue (e.g. exact files to defer, exact images to compress). siteclaw surfaces that guidance as text. It does not edit theme, plugin, or server files — doing so would require write access to a live site, a larger and riskier scope than reading.
-- **No CrUX/HTTP Archive industry benchmarking.** Considered and dropped: CrUX's traffic-volume requirement means it would likely return empty for the smaller sites in scope, and BigQuery's setup overhead (GCP project/billing) isn't justified by a comparison that doesn't change what gets fixed.
-
-## Architecture
-
-**Data captured per run** (from Lighthouse's own JSON output only, no additional measurement):
-- Performance score
-- Render-blocking resources (specific script/stylesheet URLs)
-- Opportunities: unoptimized images, unused CSS/JS, oversized payloads, with Lighthouse's own fix-guidance text
-- Optional operator note (deploy/change annotation)
-
-**Storage:** local SQLite database. Site list lives in a data file (`sites.json`), not hardcoded, so client sites can be added without touching code.
-
-## Usage
-
-Not published to npm yet (see the badge above), so there is no global `siteclaw` command to run yet. Run it via the `dev` script from inside the project directory instead:
-
-```
-pnpm dev check <site> [--note "text"]   # run Lighthouse against the site, store the result
-pnpm dev list                           # latest score for every site in sites.json
-pnpm dev history <site>                 # score history + trend for one site
-pnpm dev correlate                      # shared render-blocking resources across sites
+```bash
+npm install -g siteclaw
 ```
 
-(Once published and installed globally with `npm install -g siteclaw`, these become `siteclaw check <site>`, `siteclaw list`, etc. — same commands, no `pnpm dev` prefix.)
+or, for local development:
 
-`sites.json`:
-```json
-[
-  { "name": "client-a", "url": "https://client-a-domain.com" }
-]
+```bash
+git clone https://github.com/psandis/siteclaw.git
+cd siteclaw
+pnpm install
+pnpm build
 ```
 
-Real output, from a run against a live public WordPress installation:
+## Quick Start
+
+```bash
+# sites.json: array of sites to track
+echo '[{ "name": "client-a", "url": "https://client-a-domain.com" }]' > sites.json
+
+siteclaw check client-a --note "deployed plugin update"
+siteclaw check https://example.com    # one-off check, no sites.json entry needed
+siteclaw list
+siteclaw history client-a
+siteclaw correlate
 ```
-$ pnpm dev check techcrunch
+
+(Running from a clone instead of a global install? Use `pnpm dev <command>` in place of `siteclaw <command>`.)
+
+## CLI
+
+### Check a site
+
+```
+siteclaw check techcrunch
+
 Running Lighthouse against https://techcrunch.com...
 
-techcrunch: performance score 37
+techcrunch: performance score 46
+
+Core metrics:
+  First Contentful Paint: 2280ms (needs improvement)
+  Largest Contentful Paint: 4249ms (poor)
+  Speed Index: 10955ms (poor)
+  Time to Interactive: 33394ms (poor)
+  Total Blocking Time: 1824ms (poor)
+  Cumulative Layout Shift: 0.064 (good)
 
 Opportunities:
-  Reduce unused CSS
-  Reduce unused JavaScript (4110ms potential savings)
-  Avoid enormous network payloads
+  Reduce unused CSS: Reduce unused rules from stylesheets and defer CSS not used for above-the-fold content to decrease bytes consumed by network activity. [Learn how to reduce unused CSS](https://developer.chrome.com/docs/lighthouse/performance/unused-css-rules/). (160ms potential savings)
+  Reduce unused JavaScript: Reduce unused JavaScript and defer loading scripts until they are required to decrease bytes consumed by network activity. [Learn how to reduce unused JavaScript](https://developer.chrome.com/docs/lighthouse/performance/unused-javascript/). (160ms potential savings)
+  Avoid enormous network payloads: Large network payloads cost users real money and are highly correlated with long load times. [Learn how to reduce payload sizes](https://developer.chrome.com/docs/lighthouse/performance/total-byte-weight/).
 
-$ pnpm dev list
+Diagnostics:
+  DOM elements: 7146
+  Network requests: 246 (4.0MB transferred)
+  Third-party impact (main-thread time):
+    Google Tag Manager: 188ms, 521.5KB
+    servenobid.com: 124ms, 438.2KB
+    Google CDN: 104ms, 346.1KB
+    Facebook: 95ms, 189.9KB
+    Google/Doubleclick Ads: 67ms, 269.9KB
+
+Security:
+  HTTPS: yes
+  HSTS header: present
+  CSP against XSS: configured
+
+Vs. previous check (2026-09-16T22:09:31.502Z): score up 12, LCP -25629ms
+```
+
+Notes:
+
+- accepts either a name from `sites.json`, a bare domain (`www.example.com`), or a full `http(s)://` URL — no `sites.json` entry required for the latter two
+- `--note <text>` attaches a note to the run, useful for tracing a later regression back to a specific change
+- Core metric ratings (good / needs improvement / poor) use Google's own published Core Web Vitals / Lighthouse thresholds
+- Third-party impact and security checks (HTTPS, HSTS, CSP) come from Lighthouse's `best-practices` category, run alongside `performance`
+- the "vs. previous check" line is skipped for the metric comparison (score still shown) if the previous run predates core-metrics tracking, rather than showing a misleading diff against missing data
+
+### List all sites
+
+```
+siteclaw list
+
 nasa            64   2026-09-16T20:46:54.909Z
 rollingstone    21   2026-09-16T20:47:12.956Z
-techcrunch      37   2026-09-16T20:46:40.141Z
+techcrunch      46   2026-09-16T22:12:13.034Z
 ```
+
+Notes:
+
+- only shows sites currently listed in `sites.json`; older runs for sites removed from that file stay in the database but are hidden here
+
+### History for one site
+
+```
+siteclaw history techcrunch
+
+2026-09-16T20:46:40.141Z	37
+2026-09-16T21:48:00.486Z	42 note: second check for real history example
+2026-09-16T22:07:20.149Z	44
+2026-09-16T22:09:31.502Z	34
+2026-09-16T22:12:13.034Z	46
+
+Trend: up 12
+```
+
+### Correlate shared issues
+
+```
+siteclaw correlate
+
+No shared render-blocking resources found across sites.
+```
+
+Notes:
+
+- compares the latest run of every site currently in `sites.json`
+- flags render-blocking resource URLs that appear on more than one site — usually a shared theme or plugin asset; the example above shows the real "nothing shared" case for a portfolio of unrelated sites (techcrunch/nasa/rollingstone don't share assets). When two sites do share one, the line reads `<url> -> affects: <site-a>, <site-b>`.
 
 ## Configuration
 
-Everything below is read from `siteclaw.config.json` at the project root. If the file is missing, these defaults are used.
+All defaults live in `siteclaw.config.json` at the project root. No code changes needed to:
+
+- change where the SQLite database (`dbPath`) or site list (`sitesPath`) live
+- change which Lighthouse audits (`opportunityAudits`) get surfaced as opportunities
 
 ```json
 {
@@ -104,18 +159,58 @@ Everything below is read from `siteclaw.config.json` at the project root. If the
 }
 ```
 
-- `dbPath` — where the SQLite database is created/read
-- `sitesPath` — where the site list is read from
-- `opportunityAudits` — which Lighthouse audit IDs get surfaced as "opportunities" in `check` output (render-blocking-resources is always captured separately, regardless of this list)
+If the file is missing, these same values are used as built-in defaults.
+
+## Agent Integration
+
+All commands support `--json` for structured output:
+
+```bash
+siteclaw --json check techcrunch
+siteclaw --json list
+siteclaw --json history techcrunch
+siteclaw --json correlate
+```
+
+### OpenClaw Skill
+
+Once installed globally (`npm install -g siteclaw`), add a `SKILL.md` to your workspace:
+
+```markdown
+---
+name: siteclaw
+description: Lighthouse performance history tracker for a portfolio of client sites
+version: 0.1.3
+requires_binaries:
+  - siteclaw
+---
+
+When the user asks about site performance, regressions, or shared issues across client
+sites, use the `siteclaw` CLI:
+
+- To check a site: `siteclaw --json check <site-or-url>`
+- To list all tracked sites: `siteclaw --json list`
+- To see history for one site: `siteclaw --json history <site>`
+- To find shared issues across sites: `siteclaw --json correlate`
+```
 
 ## Testing
 
 `pnpm test` runs the Vitest suite (`tests/`), covering the SQLite layer, the site-list loader, the config loader, and the cross-site correlation logic. Lighthouse itself is not mocked or covered by automated tests — it requires a real headless Chrome and a real network call, so it's verified manually via `siteclaw check` against a real URL instead.
 
-## Tech stack
+## Tech Stack
 
 TypeScript/Node, [`lighthouse`](https://www.npmjs.com/package/lighthouse) + `chrome-launcher` for measurement, `better-sqlite3` for storage, `commander` for the CLI, `vitest` for tests, `biome` for lint/format, `pnpm` as package manager.
 
+## Related
+
+- 🦀 [Dietclaw](https://github.com/psandis/dietclaw) — Codebase health monitor
+- 🦀 [Dustclaw](https://github.com/psandis/dustclaw) — Find out what is eating your disk space
+- 🦀 [Driftclaw](https://github.com/psandis/driftclaw) — Deployment drift detection across environments
+- 🦀 [Feedclaw](https://github.com/psandis/feedclaw) — RSS/Atom feed reader and AI digest builder
+- 🦀 [OpenClaw](https://github.com/openclaw/openclaw) — The open claw ecosystem
+
 ## License
 
-Not yet decided.
+See [MIT](LICENSE)
+

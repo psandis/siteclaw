@@ -9,8 +9,11 @@ function makeRun(siteName: string, blockingUrls: string[]): Run {
     url: `https://${siteName}.com`,
     timestamp: new Date().toISOString(),
     performanceScore: 50,
+    coreMetrics: { fcp: 0, lcp: 0, speedIndex: 0, tti: 0, tbt: 0, cls: 0 },
     renderBlockingResources: blockingUrls.map((url) => ({ url, wastedMs: 100 })),
     opportunities: [],
+    diagnostics: { domElementCount: 0, totalRequests: 0, totalTransferBytes: 0, thirdParty: [] },
+    security: { onHttps: true, hasHsts: true, hasCspAgainstXss: true, deprecatedApiUsages: [] },
     note: null,
   };
 }

@@ -1,6 +1,14 @@
 import * as chromeLauncher from "chrome-launcher";
 import lighthouse from "lighthouse";
-import type { LighthouseResult, Opportunity, RenderBlockingResource } from "./types.js";
+import type {
+  CoreMetrics,
+  Diagnostics,
+  LighthouseResult,
+  Opportunity,
+  RenderBlockingResource,
+  SecurityFindings,
+  ThirdPartyImpact,
+} from "./types.js";
 
 // Lighthouse audits a page by driving a real (headless) Chrome instance, so it needs its own
 // browser to launch and control on a local debugging port. This is black-box only: no server
@@ -8,13 +16,17 @@ import type { LighthouseResult, Opportunity, RenderBlockingResource } from "./ty
 //
 // `opportunityAudits` is caller-supplied (from siteclaw.config.json) rather than hardcoded here,
 // so which audits get surfaced can change without touching this file.
+//
+// best-practices is included alongside performance (not performance alone) specifically to get
+// real security-relevant audits (is-on-https, has-hsts, csp-xss, deprecations) computed at all —
+// they don't run if only the performance category is requested.
 export async function runLighthouse(url: string, opportunityAudits: string[]): Promise<LighthouseResult> {
   const chrome = await chromeLauncher.launch({ chromeFlags: ["--headless"] });
   try {
     const runnerResult = await lighthouse(url, {
       port: chrome.port,
       output: "json",
-      onlyCategories: ["performance"],
+      onlyCategories: ["performance", "best-practices"],
     });
 
     if (!runnerResult) {
@@ -24,6 +36,18 @@ export async function runLighthouse(url: string, opportunityAudits: string[]): P
     const lhr = runnerResult.lhr;
     // Lighthouse scores are 0-1; the rest of the app works in the familiar 0-100 form.
     const performanceScore = Math.round((lhr.categories.performance?.score ?? 0) * 100);
+
+    // Lighthouse's six underlying performance metrics, in their native units. These are the
+    // real numbers the 0-100 score is computed from, surfaced directly rather than only as
+    // one aggregate score.
+    const coreMetrics: CoreMetrics = {
+      fcp: lhr.audits["first-contentful-paint"]?.numericValue ?? 0,
+      lcp: lhr.audits["largest-contentful-paint"]?.numericValue ?? 0,
+      speedIndex: lhr.audits["speed-index"]?.numericValue ?? 0,
+      tti: lhr.audits.interactive?.numericValue ?? 0,
+      tbt: lhr.audits["total-blocking-time"]?.numericValue ?? 0,
+      cls: lhr.audits["cumulative-layout-shift"]?.numericValue ?? 0,
+    };
 
     // Render-blocking resources are tracked separately from the configurable opportunity list
     // below because they're central to the tool's cross-site correlation feature.
@@ -47,7 +71,44 @@ export async function runLighthouse(url: string, opportunityAudits: string[]): P
         wastedMs: (audit.details as any)?.overallSavingsMs ?? null,
       }));
 
-    return { performanceScore, renderBlockingResources, opportunities };
+    // network-requests lists one row per request (not pre-aggregated), so totals are summed
+    // here. third-parties-insight (replaces the removed third-party-summary audit) gives
+    // per-origin main-thread blocking time and transfer size directly.
+    const requestItems: any[] = (lhr.audits["network-requests"]?.details as any)?.items ?? [];
+    const totalRequests = requestItems.length;
+    const totalTransferBytes = requestItems.reduce((sum, r) => sum + (r.transferSize ?? 0), 0);
+
+    const thirdPartyItems: any[] = (lhr.audits["third-parties-insight"]?.details as any)?.items ?? [];
+    const thirdParty: ThirdPartyImpact[] = thirdPartyItems
+      .map((item) => ({
+        entity: typeof item.entity === "string" ? item.entity : String(item.entity),
+        blockingMs: item.mainThreadTime ?? 0,
+        transferBytes: item.transferSize ?? 0,
+      }))
+      .slice(0, 5);
+
+    const diagnostics: Diagnostics = {
+      domElementCount: lhr.audits["dom-size-insight"]?.numericValue ?? 0,
+      totalRequests,
+      totalTransferBytes,
+      thirdParty,
+    };
+
+    // best-practices audits: score === 1 is a pass, 0 is a fail, null means not applicable
+    // to this page. Treated as a pass when not applicable, since there's nothing to flag.
+    const passes = (id: string) => lhr.audits[id]?.score !== 0;
+    const deprecationsAudit = lhr.audits.deprecations;
+    const deprecatedApiUsages: string[] =
+      (deprecationsAudit?.details as any)?.items?.map((item: any) => item.value ?? String(item)) ?? [];
+
+    const security: SecurityFindings = {
+      onHttps: passes("is-on-https"),
+      hasHsts: passes("has-hsts"),
+      hasCspAgainstXss: passes("csp-xss"),
+      deprecatedApiUsages,
+    };
+
+    return { performanceScore, coreMetrics, renderBlockingResources, opportunities, diagnostics, security };
   } finally {
     // Always kill the launched Chrome instance, even if Lighthouse throws, to avoid leaking
     // headless Chrome processes on every failed run.

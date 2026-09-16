@@ -8,8 +8,16 @@ const TEST_DB_PATH = "test-siteclaw.db";
 function makeResult(score: number): LighthouseResult {
   return {
     performanceScore: score,
+    coreMetrics: { fcp: 1000, lcp: 1500, speedIndex: 2000, tti: 2500, tbt: 100, cls: 0.05 },
     renderBlockingResources: [{ url: "https://example.com/blocking.js", wastedMs: 100 }],
     opportunities: [],
+    diagnostics: {
+      domElementCount: 800,
+      totalRequests: 42,
+      totalTransferBytes: 512_000,
+      thirdParty: [{ entity: "Google Analytics", blockingMs: 50, transferBytes: 20_000 }],
+    },
+    security: { onHttps: true, hasHsts: false, hasCspAgainstXss: false, deprecatedApiUsages: [] },
   };
 }
 
@@ -60,5 +68,26 @@ describe("db", () => {
 
   it("returns an empty array for a site with no runs", () => {
     expect(getHistoryForSite(db, "nonexistent")).toEqual([]);
+  });
+
+  it("round-trips diagnostics and security findings", () => {
+    insertRun(db, "site-a", "https://site-a.com", makeResult(80), null);
+    const [run] = getHistoryForSite(db, "site-a");
+
+    expect(run.diagnostics.domElementCount).toBe(800);
+    expect(run.diagnostics.thirdParty[0].entity).toBe("Google Analytics");
+    expect(run.security.onHttps).toBe(true);
+    expect(run.security.hasHsts).toBe(false);
+  });
+
+  it("falls back to empty diagnostics/security for rows written before those columns existed", () => {
+    db.prepare(
+      `INSERT INTO runs (site_name, url, timestamp, performance_score, render_blocking_resources, opportunities)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run("legacy-site", "https://legacy-site.com", new Date().toISOString(), 60, "[]", "[]");
+
+    const [run] = getHistoryForSite(db, "legacy-site");
+    expect(run.diagnostics).toEqual({ domElementCount: 0, totalRequests: 0, totalTransferBytes: 0, thirdParty: [] });
+    expect(run.security.onHttps).toBe(true);
   });
 });
